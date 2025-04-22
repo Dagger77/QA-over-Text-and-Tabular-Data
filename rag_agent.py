@@ -47,18 +47,21 @@ class RAGDeps:
 
 # Create the Pydantic AI agent
 agent = Agent(
-    'openai:gpt-4o-mini',
+    model='openai:gpt-4o-mini',
     deps_type=RAGDeps,
-    system_prompt="You are a helpful assistant that answers questions about how demographic factors influence student performance based on the provided documentation. "
-                  "Use the retrieve tool to get relevant information from documents before answering. "
-                  "If the documents doesn't contain the answer, clearly state that the information isn't available"
+    system_prompt="You are a helpful assistant that answers questions about how demographic factors influence student performance based on the provided documents."
+                  "Use the retrieve tool to get relevant information from documents before answering."
+                  "Reply in short, crispy manner."
+                  "Prefer the document content over general knowledge."
+                  "If the question is not related to the documents topic, mention it in the reply"
+                  "In case when the documents doesn't contain the answer, clearly state that the information isn't available"
                   "in the current documents and provide your best general knowledge response."
 )
 
 
 @agent.tool
 async def retrieve(context: RunContext[RAGDeps], search_query: str) -> str:
-    """Retrieve relevant documents from ChromaDB based on a search query. ???
+    """Retrieve relevant documents.
 
     Args:
         context: The run context containing dependencies.
