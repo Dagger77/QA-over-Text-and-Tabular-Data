@@ -152,12 +152,13 @@ async def run_sql_agent(question: str) -> str:
         return "No answer returned."
 
 
-async def main():
+def main():
     conn = sqlite3.connect("student_data.db")
     deps = SQLDeps(conn)
 
     user_query = input("Ask a question about the data: ")
-    result = await agent.run(user_query, deps=deps)
+
+    result = asyncio.run(run_sql_agent(user_query))
 
     print("\n--- SQL Query ---")
     print(result.output.sql_query)
@@ -171,4 +172,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

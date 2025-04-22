@@ -1,5 +1,5 @@
 from langgraph.graph import StateGraph, END
-from typing import TypedDict, Literal
+from typing import TypedDict
 from pydantic_ai import Agent
 
 from rag_agent import run_rag_agent
@@ -10,6 +10,7 @@ from summary_agent import run_summary_agent
 # Define shared state
 class AgentState(TypedDict):
     input: str
+    intent: str
     rag_output: str
     sql_output: str
     final_answer: str
@@ -27,9 +28,14 @@ intent_router = Agent(
 )
 
 
-async def route(state: AgentState) -> Literal["rag", "sql", "hybrid"]:
+async def classify_node(state: AgentState) -> AgentState:
     intent = await intent_router.run(state["input"])
-    return intent.data.strip().lower()
+    state["intent"] = intent.data.strip().lower()
+    return state
+
+
+def decide_next_step(state: AgentState) -> str:
+    return state["intent"]
 
 
 # SQL agent node
@@ -58,23 +64,28 @@ async def summarize_node(state: AgentState) -> AgentState:
 
 # Define the LangGraph
 builder = StateGraph(AgentState)
+
+builder.add_node("classify", classify_node)
 builder.add_node("sql", sql_node)
 builder.add_node("rag", rag_node)
 builder.add_node("summarize", summarize_node)
 
-# Routing logic
-builder.add_conditional_edges("input", route, {
+builder.set_entry_point("classify")
+
+# Routing after classification
+builder.add_conditional_edges("classify", decide_next_step, {
     "sql": "sql",
     "rag": "rag",
-    "hybrid": "rag" # for hybrid, we'll trigger rag first, then go to sql manually
+    "hybrid": "rag"  # hybrid starts with RAG, then branches to SQL
 })
 
-# Link to summarization
-builder.add_edge("sql", "summarize")
-builder.add_edge("rag", "summarize")
-builder.add_edge("hybrid", "sql")  # after rag runs in hybrid, go to sql
+# After RAG, route depending on intent
+builder.add_conditional_edges("rag", lambda s: "sql" if s["intent"] == "hybrid" else "summarize", {
+    "sql": "sql",
+    "summarize": "summarize"
+})
 
-# End
+builder.add_edge("sql", "summarize")
 builder.add_edge("summarize", END)
 
 # Compile graph
