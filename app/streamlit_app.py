@@ -1,3 +1,8 @@
+import sys
+import os
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from dotenv import load_dotenv
 import streamlit as st
 import asyncio
@@ -7,6 +12,8 @@ import time
 from agents.rag_agent import initialize_rag
 from orchestration.orchestration import multi_agent_graph
 from agents.summary_agent import summary_agent
+
+
 
 load_dotenv()
 

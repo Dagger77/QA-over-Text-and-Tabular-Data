@@ -1,4 +1,5 @@
 """Pydantic AI agent that builds SQL query and retrieves data from local database."""
+import os
 import sqlite3
 import asyncio
 from dataclasses import dataclass
@@ -12,6 +13,8 @@ from pydantic_ai import Agent, RunContext, ModelRetry, format_as_xml
 import dotenv
 
 dotenv.load_dotenv()
+
+DB_PATH = os.path.join(os.path.dirname(__file__), "..", "student_data.db")
 
 # Schema definition for prompt (SQLite style)
 DB_SCHEMA = """
@@ -67,23 +70,28 @@ SQL_EXAMPLES = [
     }
 ]
 
+
 @dataclass
 class SQLDeps:
     conn: sqlite3.Connection
+
 
 class Success(BaseModel):
     sql_query: Annotated[str, MinLen(1)]
     explanation: str = Field('', description='Explanation of the SQL query')
     rows: list[dict] = Field(default_factory=list)
 
+
 class InvalidRequest(BaseModel):
     error_message: str
+
 
 class SQLAgentOutput(TypedDict, total=False):
     sql_query: str
     explanation: str
     rows: list[dict]
     error: str
+
 
 Response = Union[Success, InvalidRequest]
 
@@ -93,6 +101,7 @@ agent: Agent[SQLDeps, Response] = Agent(
     output_type=Response,
     instrument=True,
 )
+
 
 @agent.system_prompt
 async def system_prompt() -> str:
@@ -113,6 +122,7 @@ Here are some examples:
 {format_as_xml(SQL_EXAMPLES)}
 """
 
+
 @agent.output_validator
 async def validate_output(ctx: RunContext[SQLDeps], output: Response) -> Response:
     if isinstance(output, InvalidRequest):
@@ -121,6 +131,11 @@ async def validate_output(ctx: RunContext[SQLDeps], output: Response) -> Respons
     output.sql_query = output.sql_query.replace('\\', '')
     if not output.sql_query.strip().upper().startswith("SELECT"):
         raise ModelRetry("Please generate SELECT queries only.")
+
+    # Inject second query BEFORE execution
+    if "student_info_basic" in output.sql_query:
+        detailed_query = output.sql_query.replace("student_info_basic", "student_info_detailed")
+        output.sql_query += f";\n{detailed_query}"
 
     rows = []
     errors = []
@@ -143,8 +158,9 @@ async def validate_output(ctx: RunContext[SQLDeps], output: Response) -> Respons
 
     return output
 
+
 async def run_sql_agent(question: str) -> SQLAgentOutput:
-    conn = sqlite3.connect("../student_data.db")
+    conn = sqlite3.connect(os.path.abspath(DB_PATH))
     deps = SQLDeps(conn)
 
     modified_question = question.strip() + (
@@ -153,11 +169,6 @@ async def run_sql_agent(question: str) -> SQLAgentOutput:
 
     result = await agent.run(modified_question, deps=deps)
     conn.close()
-
-    # attempt to handle data inconsistency across the tables
-    if "student_info_basic" in result.output.sql_query:
-        detailed_query = result.output.sql_query.replace("student_info_basic", "student_info_detailed")
-        result.output.sql_query += f";\n{detailed_query}"
 
     if hasattr(result.output, "rows") and result.output.rows:
         return {
@@ -171,6 +182,7 @@ async def run_sql_agent(question: str) -> SQLAgentOutput:
         return {"error": result.output.error_message}
     else:
         return {"error": "No answer returned."}
+
 
 async def main():
     user_query = input("Ask a question about the data: ")
@@ -186,6 +198,7 @@ async def main():
         print(result["explanation"])
     elif "error" in result:
         print("Error:", result["error"])
+
 
 if __name__ == "__main__":
     asyncio.run(main())
