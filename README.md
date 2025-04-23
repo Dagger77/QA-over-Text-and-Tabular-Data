@@ -33,7 +33,6 @@ This project is a multi-agent Streamlit application that can answer questions us
 ├── data/
 │   ├── knowledgebase-data/       # CSV files
 │   └── knowledgebase-docs/       # RTF documents
-├── student_data.db               # SQLite database (auto-generated)
 ├── .env                          # OpenAI API key
 ├── requirements.txt              # Python dependencies
 └── tests/                        # Test suite
@@ -70,8 +69,18 @@ OPENAI_API_BASE = 'https://api.openai.com/v1' # for some reason required for Lig
 ---
 
 ## 🧪 Running Tests
+
+### ⚠️ Before Running Tests
+
+To ensure tests pass, initialize the data:
+
 ```bash
-pytest
+python ingestion/table_ingestion.py
+python ingestion/docs_ingestion.py
+```
+
+```bash
+pytest tests/post_ingestion_test.py
 ```
 > Includes ingestion checks, agent verification, and hybrid orchestration tests.
 
@@ -94,3 +103,6 @@ streamlit run app/streamlit_app.py
 
 ## 🧩 Future Enhancements
 - Visualisation of tabular data
+
+
+📘 See [DEVELOPMENT.md](./DEVELOPMENT.md) for the full changelog and dev notes.
