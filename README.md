@@ -62,7 +62,7 @@ pip install -r requirements.txt
 ### 4. Add OpenAI key
 Create a `.env` file:
 ```
-OPENAI_API_KEY=your-key-here
+OPENAI_API_KEY = your-key-here
 OPENAI_API_BASE = 'https://api.openai.com/v1' # for some reason required for LightRag
 ```
 
