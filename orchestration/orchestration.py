@@ -41,33 +41,39 @@ intent_router = Agent(
 )
 
 
+def decide_next_step(state: AgentState) -> str:
+    return state["intent"]
+
+
+# Intent classifier agent node
 async def classify_node(state: AgentState) -> AgentState:
     intent = await intent_router.run(state["input"])
     state["intent"] = intent.output.strip().lower()
     return state
 
 
-def decide_next_step(state: AgentState) -> str:
-    return state["intent"]
-
-
 # SQL agent node
 async def sql_node(state: AgentState) -> AgentState:
     result = await run_sql_agent(state["input"])
 
-    # Limit the number of rows passed downstream (summarizer, debug)
-    MAX_ROWS = 5
-    if "rows" in result and isinstance(result["rows"], list):
-        result["rows"] = result["rows"][:MAX_ROWS]
-
-    if 'error' in result:
+    if "error" in result:
         state["sql_output"] = f"Error: {result['error']}"
-    elif 'rows' in result:
-        state["sql_output"] = f"**Query:** `{result['sql_query']}`\n\n**Answer:**\n" + "\n".join(str(r) for r in result['rows'])
-    elif 'explanation' in result:
-        state["sql_output"] = result['explanation']
     else:
-        state["sql_output"] = "No SQL result."
+        query = result.get("sql_query", "")
+        explanation = result.get("explanation", "")
+        rows = result.get("rows", [])
+
+        parts = []
+        if query:
+            parts.append(f"**Query:** `{query}`")
+        if explanation:
+            parts.append(f"**Explanation:**\n{explanation}")
+        if rows:
+            parts.append("**Answer:**\n" + "\n".join(str(r) for r in rows))
+        else:
+            parts.append("**Answer:**\n_No rows returned._")
+
+        state["sql_output"] = "\n\n".join(parts)
 
     return state
 
@@ -78,7 +84,7 @@ async def rag_node(state: AgentState) -> AgentState:
     return state
 
 
-# Summary node
+# Summary agent node
 async def summarize_node(state: AgentState) -> AgentState:
     outputs = []
     if state.get("rag_output"):

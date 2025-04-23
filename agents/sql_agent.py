@@ -4,7 +4,6 @@ import sqlite3
 import asyncio
 from dataclasses import dataclass
 from typing import Annotated, Union, TypedDict
-from datetime import date
 
 from annotated_types import MinLen
 from pydantic import BaseModel, Field
@@ -16,7 +15,7 @@ dotenv.load_dotenv()
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "student_data.db")
 
-# Schema definition for prompt (SQLite style)
+# Schema definition
 DB_SCHEMA = """
 CREATE TABLE student_info_detailed (
     Gender TEXT,
@@ -102,12 +101,14 @@ agent: Agent[SQLDeps, Response] = Agent(
     instrument=True,
 )
 
+
 def get_table_columns(conn, table_name):
     try:
         cursor = conn.execute(f"PRAGMA table_info({table_name})")
         return {row[1].lower() for row in cursor.fetchall()}
     except Exception:
         return set()
+
 
 @agent.system_prompt
 async def system_prompt() -> str:
@@ -169,9 +170,9 @@ async def validate_output(ctx: RunContext[SQLDeps], output: Response) -> Respons
         except sqlite3.Error as e:
             errors.append(f"Error for query `{query}`: {str(e)}")
 
-    # handles max token limit, limits number of rows in output
-    MAX_ROWS = 5
-    rows = rows[: MAX_ROWS]
+    # handles max token limit, limits number of rows in the output
+    max_rows = 5
+    rows = rows[: max_rows]
 
     output.rows = rows
     if errors:

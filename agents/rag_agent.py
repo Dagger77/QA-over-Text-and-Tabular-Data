@@ -10,15 +10,13 @@ import asyncio
 import dotenv
 from pydantic_ai import RunContext
 from pydantic_ai.agent import Agent
-from openai import AsyncOpenAI
 
 from lightrag import LightRAG, QueryParam
 from lightrag.llm.openai import gpt_4o_mini_complete, openai_embed
 
-# Load environment variables from .env file
 dotenv.load_dotenv()
 
-documents_path = "../data/knowledgebase-docs"
+DOCUMENTS_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "knowledgebase-docs")
 
 # Check for OpenAI API key
 if not os.getenv("OPENAI_API_KEY"):
@@ -30,7 +28,7 @@ if not os.getenv("OPENAI_API_KEY"):
 async def initialize_rag():
     """Create and initialize LightRAG."""
     rag = LightRAG(
-        working_dir=documents_path,
+        working_dir=DOCUMENTS_PATH,
         embedding_func=openai_embed,
         llm_model_func=gpt_4o_mini_complete
     )
@@ -80,8 +78,8 @@ async def run_rag_agent(question: str, lightrag: LightRAG) -> str:
 
 
 async def main():
-    """Main function to parse arguments and run the RAG agent. For CLI usage."""
-    parser = argparse.ArgumentParser(description="Run a Pydantic AI agent with RAG using ChromaDB")
+    """Main function to parse arguments and run the RAG agent."""
+    parser = argparse.ArgumentParser(description="Run a Pydantic AI agent with LightRAG")
     parser.add_argument("--question", help="The question to answer about knowledgebase documents")
     args = parser.parse_args()
 

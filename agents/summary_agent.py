@@ -1,6 +1,14 @@
 """A summarizer agent that combines multiple sources (e.g., SQL + RAG) into a human-friendly response"""
 
+import os
+import sys
 from pydantic_ai import Agent
+
+# Check for OpenAI API key
+if not os.getenv("OPENAI_API_KEY"):
+    print("Error: OPENAI_API_KEY environment variable not set.")
+    print("Please create a .env file with your OpenAI API key or set it in your environment.")
+    sys.exit(1)
 
 summary_agent = Agent(
     model="openai:gpt-4o",

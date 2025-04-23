@@ -2,8 +2,6 @@ import sqlite3
 import pytest
 import os
 
-from tests.utils import missing_required_tables
-
 
 @pytest.fixture(scope="module")
 def db_connection():

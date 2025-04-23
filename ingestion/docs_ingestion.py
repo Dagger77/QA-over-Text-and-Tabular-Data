@@ -7,7 +7,6 @@ import dotenv
 from striprtf.striprtf import rtf_to_text
 from pathlib import Path
 
-# Load environment variables from .env file
 dotenv.load_dotenv()
 
 documents_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "knowledgebase-docs"))
