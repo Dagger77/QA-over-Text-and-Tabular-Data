@@ -1,21 +1,24 @@
-"""Pydantic AI agent that builds SQL query and retrieves data from local database."""
+"""
+Pydantic AI agent that builds SQL queries and retrieves data from a local SQLite database.
+"""
+
 import os
 import sqlite3
 import asyncio
 from dataclasses import dataclass
-from typing import Annotated, Union, TypedDict
+from typing import Annotated, Union, TypedDict, List, Dict
 
 from annotated_types import MinLen
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext, ModelRetry, format_as_xml
 
-import dotenv
+from dotenv import load_dotenv
 
-dotenv.load_dotenv()
+load_dotenv()
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "student_data.db")
 
-# Schema definition
+# Schema for guiding the agent
 DB_SCHEMA = """
 CREATE TABLE student_info_detailed (
     Gender TEXT,
@@ -46,7 +49,6 @@ CREATE TABLE student_info_basic (
 );
 """
 
-# Example queries for guiding the agent
 SQL_EXAMPLES = [
     {
         'request': 'average math score of students who completed test preparation',
@@ -78,7 +80,7 @@ class SQLDeps:
 class Success(BaseModel):
     sql_query: Annotated[str, MinLen(1)]
     explanation: str = Field('', description='Explanation of the SQL query')
-    rows: list[dict] = Field(default_factory=list)
+    rows: List[Dict] = Field(default_factory=list)
 
 
 class InvalidRequest(BaseModel):
@@ -88,30 +90,54 @@ class InvalidRequest(BaseModel):
 class SQLAgentOutput(TypedDict, total=False):
     sql_query: str
     explanation: str
-    rows: list[dict]
+    rows: List[Dict]
     error: str
 
 
 Response = Union[Success, InvalidRequest]
 
-agent: Agent[SQLDeps, Response] = Agent(
-    model='openai:gpt-4o-mini',
+agent = Agent[SQLDeps, Response](
+    model="openai:gpt-4o-mini",
     deps_type=SQLDeps,
     output_type=Response,
     instrument=True,
 )
 
 
-def get_table_columns(conn, table_name):
+def get_table_columns(conn: sqlite3.Connection, table: str) -> set:
     try:
-        cursor = conn.execute(f"PRAGMA table_info({table_name})")
+        cursor = conn.execute(f"PRAGMA table_info({table})")
         return {row[1].lower() for row in cursor.fetchall()}
     except Exception:
         return set()
 
 
+def get_categorical_value_hints(conn: sqlite3.Connection) -> str:
+    """
+    Generate a string summary of distinct values for key categorical columns.
+    """
+    categorical_columns = {
+        "student_info_basic": ["Gender", "EthnicGroup", "LunchType", "TestPrep", "ParentEduc"],
+        "student_info_detailed": ["ParentMaritalStatus", "PracticeSport", "IsFirstChild", "TransportMeans",
+                                  "WklyStudyHours"]
+    }
+
+    hints = []
+    for table, columns in categorical_columns.items():
+        for col in columns:
+            try:
+                cursor = conn.execute(f"SELECT DISTINCT {col} FROM {table}")
+                values = sorted(set(str(row[0]) for row in cursor.fetchall() if row[0] is not None))
+                formatted = ", ".join(values)
+                hints.append(f"- {table}.{col}: {formatted}")
+            except Exception:
+                continue
+    return "\n".join(hints)
+
+
 @agent.system_prompt
-async def system_prompt() -> str:
+async def system_prompt(ctx: RunContext[SQLDeps]) -> str:
+    value_hints = get_categorical_value_hints(ctx.deps.conn)
     return f"""
 You are an assistant that helps translate user questions into SQL queries for a SQLite database.
 
@@ -121,6 +147,9 @@ The database contains two related tables that may have overlapping or complement
 
 If a question can be answered using data from both tables, generate two separate SELECT queries — one for each table — and run them both. Present both results clearly and separately.
 Do not use UNION. Assume the tables contain distinct, possibly inconsistent data.
+
+Refer to these distinct categorical values while forming the query:
+{value_hints}
 
 Here is the schema:
 {DB_SCHEMA}
@@ -139,42 +168,40 @@ async def validate_output(ctx: RunContext[SQLDeps], output: Response) -> Respons
     if not output.sql_query.strip().upper().startswith("SELECT"):
         raise ModelRetry("Please generate SELECT queries only.")
 
-    # Schema-aware correction
-    detailed_columns = get_table_columns(ctx.deps.conn, "student_info_detailed")
-    basic_columns = get_table_columns(ctx.deps.conn, "student_info_basic")
+    conn = ctx.deps.conn
     used_query = output.sql_query.lower()
-    used_columns = {col for col in detailed_columns.union(basic_columns) if col in used_query}
 
-    if "student_info_basic" in used_query:
-        if not used_columns.issubset(basic_columns):
-            output.explanation += "\n\nNote: The query referenced columns not present in 'student_info_basic'. Switched to 'student_info_detailed'."
-            output.sql_query = output.sql_query.replace("student_info_basic", "student_info_detailed")
+    basic_cols = get_table_columns(conn, "student_info_basic")
+    detailed_cols = get_table_columns(conn, "student_info_detailed")
+    all_columns = basic_cols.union(detailed_cols)
 
-    # Attempt to handle inconsistency by duplicating if both apply
+    used_columns = {col for col in all_columns if col in used_query}
+
+    # Fix invalid column references
+    if "student_info_basic" in used_query and not used_columns.issubset(basic_cols):
+        output.explanation += "\n\nNote: some columns aren't in 'student_info_basic'. Switched to 'student_info_detailed'."
+        output.sql_query = output.sql_query.replace("student_info_basic", "student_info_detailed")
+
+    # Duplicate query for both tables if needed
     if "student_info_basic" in output.sql_query:
         detailed_query = output.sql_query.replace("student_info_basic", "student_info_detailed")
         output.sql_query += f";\n{detailed_query}"
 
     rows = []
     errors = []
-    for query in output.sql_query.strip().split(';'):
+    for query in output.sql_query.split(";"):
         query = query.strip()
         if not query:
             continue
         try:
-            cursor = ctx.deps.conn.execute(query)
-            rows.extend([
-                dict(zip([col[0] for col in cursor.description], row))
-                for row in cursor.fetchall()
-            ])
+            cursor = conn.execute(query)
+            fetched = cursor.fetchall()
+            cols = [desc[0] for desc in cursor.description]
+            rows.extend([dict(zip(cols, row)) for row in fetched])
         except sqlite3.Error as e:
-            errors.append(f"Error for query `{query}`: {str(e)}")
+            errors.append(f"Error for query `{query}`: {e}")
 
-    # handles max token limit, limits number of rows in the output
-    max_rows = 5
-    rows = rows[: max_rows]
-
-    output.rows = rows
+    output.rows = rows[:5]  # limit output for token safety
     if errors:
         output.explanation += "\n\nSome queries failed:\n" + "\n".join(errors)
 
@@ -182,38 +209,35 @@ async def validate_output(ctx: RunContext[SQLDeps], output: Response) -> Respons
 
 
 async def run_sql_agent(question: str) -> SQLAgentOutput:
-    conn = sqlite3.connect(os.path.abspath(DB_PATH))
+    conn = sqlite3.connect(DB_PATH)
     deps = SQLDeps(conn)
 
     result = await agent.run(question, deps=deps)
     conn.close()
 
-    if hasattr(result.output, "rows") and result.output.rows:
+    if isinstance(result.output, Success):
         return {
             "sql_query": result.output.sql_query,
             "explanation": result.output.explanation,
             "rows": result.output.rows,
         }
-    elif hasattr(result.output, "explanation"):
-        return {"explanation": result.output.explanation}
-    elif hasattr(result.output, "error_message"):
+    elif isinstance(result.output, InvalidRequest):
         return {"error": result.output.error_message}
     else:
-        return {"error": "No answer returned."}
+        return {"error": "Unknown error occurred."}
 
 
 async def main():
-    user_query = input("Ask a question about the data: ")
-    result = await run_sql_agent(user_query)
+    user_input = input("Ask a question: ")
+    result = await run_sql_agent(user_input)
 
-    print("\n--- Result ---")
+    print("\n--- SQL Agent Result ---")
     if "rows" in result:
-        print("\n**Query:**", result["sql_query"])
-        print("\n**Answer:**")
+        print("Query:", result["sql_query"])
+        print("Explanation:", result.get("explanation", ""))
+        print("Answer:")
         for row in result["rows"]:
             print(row)
-    elif "explanation" in result:
-        print(result["explanation"])
     elif "error" in result:
         print("Error:", result["error"])
 

@@ -1,15 +1,19 @@
-"""A summarizer agent that combines multiple sources (e.g., SQL + RAG) into a human-friendly response"""
+"""
+A summarizer agent that combines multiple responses (e.g., SQL and RAG) into a natural, user-friendly answer.
+"""
 
 import os
 import sys
+from typing import List
+
 from pydantic_ai import Agent
 
-# Check for OpenAI API key
 if not os.getenv("OPENAI_API_KEY"):
-    print("Error: OPENAI_API_KEY environment variable not set.")
-    print("Please create a .env file with your OpenAI API key or set it in your environment.")
+    print("OPENAI_API_KEY is not set in the environment.")
     sys.exit(1)
 
+
+# Summarizer Agent Configuration
 summary_agent = Agent(
     model="openai:gpt-4o",
     system_prompt=(
@@ -20,10 +24,10 @@ summary_agent = Agent(
 )
 
 
-async def run_summary_agent(agent_outputs: list[str]) -> str:
+async def run_summary_agent(agent_outputs: List[str]) -> str:
     """
-    Combine and rephrase the responses from SQL and/or RAG agents.
+    Combine and rephrase the responses from SQL and/or RAG agents into one answer.
     """
-    combined_input = "\n\n".join(f"Answer {i + 1}: {out}" for i, out in enumerate(agent_outputs))
-    result = await summary_agent.run(combined_input)
+    combined = "\n\n".join(f"Answer {i+1}: {text}" for i, text in enumerate(agent_outputs))
+    result = await summary_agent.run(combined)
     return result.output

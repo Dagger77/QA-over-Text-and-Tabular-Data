@@ -1,6 +1,11 @@
+"""
+Orchestration logic for Multi-Agent system using LangGraph.
+Coordinates RAG, SQL, and summarization agents via intent classification.
+"""
+
+from typing import TypedDict
 from langgraph.graph import StateGraph, END
 from lightrag import LightRAG
-from typing import TypedDict
 from pydantic_ai import Agent
 
 from agents.rag_agent import run_rag_agent
@@ -8,7 +13,9 @@ from agents.sql_agent import run_sql_agent
 from agents.summary_agent import run_summary_agent
 
 
-# Define shared state
+# ----------------------------
+# Shared State Definition
+# ----------------------------
 class AgentState(TypedDict):
     input: str
     intent: str
@@ -18,7 +25,9 @@ class AgentState(TypedDict):
     rag_instance: LightRAG
 
 
-# LLM-based intent classifier
+# ----------------------------
+# Intent Classifier Agent
+# ----------------------------
 intent_router = Agent(
     model="openai:gpt-4o-mini",
     system_prompt=(
@@ -41,50 +50,52 @@ intent_router = Agent(
 )
 
 
-def decide_next_step(state: AgentState) -> str:
-    return state["intent"]
-
-
-# Intent classifier agent node
 async def classify_node(state: AgentState) -> AgentState:
-    intent = await intent_router.run(state["input"])
-    state["intent"] = intent.output.strip().lower()
+    """Classifies intent using LLM."""
+    response = await intent_router.run(state["input"])
+    state["intent"] = response.output.strip().lower()
     return state
 
 
-# SQL agent node
+def decide_next_step(state: AgentState) -> str:
+    """Determines which node to route to based on intent."""
+    return state["intent"]
+
+
+# ----------------------------
+# SQL Node
+# ----------------------------
 async def sql_node(state: AgentState) -> AgentState:
     result = await run_sql_agent(state["input"])
 
     if "error" in result:
         state["sql_output"] = f"Error: {result['error']}"
     else:
-        query = result.get("sql_query", "")
-        explanation = result.get("explanation", "")
-        rows = result.get("rows", [])
-
         parts = []
-        if query:
-            parts.append(f"**Query:** `{query}`")
-        if explanation:
-            parts.append(f"**Explanation:**\n{explanation}")
-        if rows:
-            parts.append("**Answer:**\n" + "\n".join(str(r) for r in rows))
+        if result.get("sql_query"):
+            parts.append(f"**Query:** `{result['sql_query']}`")
+        if result.get("explanation"):
+            parts.append(f"**Explanation:**\n{result['explanation']}")
+        if result.get("rows"):
+            parts.append("**Answer:**\n" + "\n".join(str(r) for r in result["rows"]))
         else:
             parts.append("**Answer:**\n_No rows returned._")
-
         state["sql_output"] = "\n\n".join(parts)
 
     return state
 
 
-# RAG agent node
+# ----------------------------
+# RAG Node
+# ----------------------------
 async def rag_node(state: AgentState) -> AgentState:
     state["rag_output"] = await run_rag_agent(state["input"], lightrag=state["rag_instance"])
     return state
 
 
-# Summary agent node
+# ----------------------------
+# Summarization Node
+# ----------------------------
 async def summarize_node(state: AgentState) -> AgentState:
     outputs = []
     if state.get("rag_output"):
@@ -96,31 +107,33 @@ async def summarize_node(state: AgentState) -> AgentState:
     return state
 
 
-# Define the LangGraph
+# ----------------------------
+# LangGraph Definition
+# ----------------------------
 builder = StateGraph(AgentState)
 
+builder.set_entry_point("classify")
 builder.add_node("classify", classify_node)
 builder.add_node("sql", sql_node)
 builder.add_node("rag", rag_node)
 builder.add_node("summarize", summarize_node)
 
-builder.set_entry_point("classify")
-
-# Routing after classification
+# Conditional routing from classifier
 builder.add_conditional_edges("classify", decide_next_step, {
     "sql": "sql",
     "rag": "rag",
     "hybrid": "rag"  # hybrid starts with RAG, then branches to SQL
 })
 
-# After RAG, route depending on intent
+# Conditional routing after RAG node
 builder.add_conditional_edges("rag", lambda s: "sql" if s["intent"] == "hybrid" else "summarize", {
     "sql": "sql",
     "summarize": "summarize"
 })
 
+# Always summarize at the end
 builder.add_edge("sql", "summarize")
 builder.add_edge("summarize", END)
 
-# Compile graph
+# Compile the graph
 multi_agent_graph = builder.compile()
