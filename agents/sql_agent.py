@@ -102,6 +102,12 @@ agent: Agent[SQLDeps, Response] = Agent(
     instrument=True,
 )
 
+def get_table_columns(conn, table_name):
+    try:
+        cursor = conn.execute(f"PRAGMA table_info({table_name})")
+        return {row[1].lower() for row in cursor.fetchall()}
+    except Exception:
+        return set()
 
 @agent.system_prompt
 async def system_prompt() -> str:
@@ -132,7 +138,18 @@ async def validate_output(ctx: RunContext[SQLDeps], output: Response) -> Respons
     if not output.sql_query.strip().upper().startswith("SELECT"):
         raise ModelRetry("Please generate SELECT queries only.")
 
-    # Inject second query BEFORE execution
+    # Schema-aware correction
+    detailed_columns = get_table_columns(ctx.deps.conn, "student_info_detailed")
+    basic_columns = get_table_columns(ctx.deps.conn, "student_info_basic")
+    used_query = output.sql_query.lower()
+    used_columns = {col for col in detailed_columns.union(basic_columns) if col in used_query}
+
+    if "student_info_basic" in used_query:
+        if not used_columns.issubset(basic_columns):
+            output.explanation += "\n\nNote: The query referenced columns not present in 'student_info_basic'. Switched to 'student_info_detailed'."
+            output.sql_query = output.sql_query.replace("student_info_basic", "student_info_detailed")
+
+    # Attempt to handle inconsistency by duplicating if both apply
     if "student_info_basic" in output.sql_query:
         detailed_query = output.sql_query.replace("student_info_basic", "student_info_detailed")
         output.sql_query += f";\n{detailed_query}"
@@ -152,6 +169,10 @@ async def validate_output(ctx: RunContext[SQLDeps], output: Response) -> Respons
         except sqlite3.Error as e:
             errors.append(f"Error for query `{query}`: {str(e)}")
 
+    # handles max token limit, limits number of rows in output
+    MAX_ROWS = 5
+    rows = rows[: MAX_ROWS]
+
     output.rows = rows
     if errors:
         output.explanation += "\n\nSome queries failed:\n" + "\n".join(errors)
@@ -163,11 +184,7 @@ async def run_sql_agent(question: str) -> SQLAgentOutput:
     conn = sqlite3.connect(os.path.abspath(DB_PATH))
     deps = SQLDeps(conn)
 
-    modified_question = question.strip() + (
-        "\n\nIMPORTANT: You MUST return the same SELECT query for both 'student_info_basic' and 'student_info_detailed'. Run each SELECT separately. Do NOT return only one query."
-    )
-
-    result = await agent.run(modified_question, deps=deps)
+    result = await agent.run(question, deps=deps)
     conn.close()
 
     if hasattr(result.output, "rows") and result.output.rows:

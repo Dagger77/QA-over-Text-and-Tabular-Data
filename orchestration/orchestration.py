@@ -43,7 +43,7 @@ intent_router = Agent(
 
 async def classify_node(state: AgentState) -> AgentState:
     intent = await intent_router.run(state["input"])
-    state["intent"] = intent.data.strip().lower()
+    state["intent"] = intent.output.strip().lower()
     return state
 
 
@@ -54,6 +54,12 @@ def decide_next_step(state: AgentState) -> str:
 # SQL agent node
 async def sql_node(state: AgentState) -> AgentState:
     result = await run_sql_agent(state["input"])
+
+    # Limit the number of rows passed downstream (summarizer, debug)
+    MAX_ROWS = 5
+    if "rows" in result and isinstance(result["rows"], list):
+        result["rows"] = result["rows"][:MAX_ROWS]
+
     if 'error' in result:
         state["sql_output"] = f"Error: {result['error']}"
     elif 'rows' in result:

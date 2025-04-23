@@ -10,15 +10,12 @@ from pathlib import Path
 # Load environment variables from .env file
 dotenv.load_dotenv()
 
-documents_path = "../data/knowledgebase-docs"
+documents_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "knowledgebase-docs"))
 
 
 def load_documents(doc_path: str):
     """
     Loads all .rtf files in directory and returns list of plain text content.
-
-    Returns:
-        str: Extracted plain text.
     """
     text_list = []
     folder = Path(doc_path)
@@ -28,6 +25,8 @@ def load_documents(doc_path: str):
             continue  # Skip directories and non-files
 
         ext = file_path.suffix.lower()
+        if ext != ".rtf":
+            continue
 
         try:
             with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -42,7 +41,8 @@ def load_documents(doc_path: str):
     return text_list
 
 
-async def initialize_rag():
+async def ingest_documents():
+    """Initialize LightRAG and ingest all RTF documents."""
     rag = LightRAG(
         working_dir=documents_path,
         embedding_func=openai_embed,
@@ -52,18 +52,12 @@ async def initialize_rag():
     await rag.initialize_storages()
     await initialize_pipeline_status()
 
-    return rag
-
-
-def main():
-    # Initialize RAG instance and ingest docs
-    rag = asyncio.run(initialize_rag())
-    print('rag initialized')
     docs = load_documents(documents_path)
-    print('Docs are ready')
+    print(f"Loaded {len(docs)} documents")
     for doc in docs:
-        rag.insert(doc)
+        await rag.ainsert(doc)
+    print("Documents ingested into RAG successfully.")
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(ingest_documents())

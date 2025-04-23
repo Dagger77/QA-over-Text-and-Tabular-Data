@@ -2,7 +2,6 @@
 
 from pydantic_ai import Agent
 
-
 summary_agent = Agent(
     model="openai:gpt-4o",
     system_prompt=(
@@ -12,16 +11,11 @@ summary_agent = Agent(
     )
 )
 
+
 async def run_summary_agent(agent_outputs: list[str]) -> str:
     """
     Combine and rephrase the responses from SQL and/or RAG agents.
-
-    Args:
-        agent_outputs: List of agent-generated answers (strings)
-
-    Returns:
-        A single human-readable summary string.
     """
-    combined_input = "\n\n".join(f"Answer {i+1}: {out}" for i, out in enumerate(agent_outputs))
+    combined_input = "\n\n".join(f"Answer {i + 1}: {out}" for i, out in enumerate(agent_outputs))
     result = await summary_agent.run(combined_input)
-    return result.data
+    return result.output

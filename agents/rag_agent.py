@@ -76,7 +76,7 @@ async def run_rag_agent(question: str, lightrag: LightRAG) -> str:
     deps = RAGDeps(lightrag=lightrag)
     result = await agent.run(question, deps=deps)
     print(f"RAG total time: {time.time() - start:.2f}s")
-    return result.data
+    return result.output
 
 
 async def main():

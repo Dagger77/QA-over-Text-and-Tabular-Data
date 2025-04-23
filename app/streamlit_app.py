@@ -1,8 +1,8 @@
 import sys
 import os
-
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+import sqlite3
 from dotenv import load_dotenv
 import streamlit as st
 import asyncio
@@ -13,17 +13,58 @@ from agents.rag_agent import initialize_rag
 from orchestration.orchestration import multi_agent_graph
 from agents.summary_agent import summary_agent
 
+from ingestion.table_ingestion import load_data
+from ingestion.docs_ingestion import ingest_documents
+
+# ---------------------------
+# Init Check Functions
+# ---------------------------
+def is_sqlite_initialized(db_path="student_data.db") -> bool:
+    if not os.path.exists(db_path):
+        return False
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        existing_tables = {row[0] for row in cursor.fetchall()}
+        conn.close()
+        return {"student_info_basic", "student_info_detailed"}.issubset(existing_tables)
+    except Exception:
+        return False
+
+def is_rag_initialized(working_dir="./knowledgebase-docs") -> bool:
+    required_files = [
+        "vdb_chunks.json", "vdb_entities.json", "vdb_relationships.json"
+    ]
+    return all(os.path.exists(os.path.join(working_dir, f)) for f in required_files)
+
 
 
 load_dotenv()
 
 DEBUG_MODE = True
 LOG_TO_FILE = True
-LOG_FILE_PATH = "../agent_logs.txt"
+LOG_FILE_PATH = os.path.join(os.path.dirname(__file__), "..", "agent_logs.txt")
 
 
 async def main():
     st.title("Multi-Agent Knowledge Explorer")
+
+    # Sidebar settings
+    with st.sidebar:
+        st.header("Settings")
+        DEBUG_MODE = st.checkbox("Enable Debug Mode", value=False)
+        LOG_TO_FILE = st.checkbox("Log Responses to File", value=False)
+
+    # Ingest if needed
+    if not is_sqlite_initialized():
+        with st.spinner("Initializing SQLite database..."):
+            load_data()
+        st.toast("Table data is ready!")
+
+    if not is_rag_initialized():
+        with st.spinner("Initializing RAG knowledgebase..."):
+            await ingest_documents()
+        st.toast("Documents are ready!")
 
     if "messages" not in st.session_state:
         st.session_state.messages = []
