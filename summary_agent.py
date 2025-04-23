@@ -4,7 +4,7 @@ from pydantic_ai import Agent
 
 
 summary_agent = Agent(
-    model="openai:gpt-4o-mini",
+    model="openai:gpt-4o",
     system_prompt=(
         "You are a summarizer agent. Your job is to take multiple answers from RAG and SQL agents, and create a clear, concise, and natural response for the user. "
         "Focus on clarity, avoid raw SQL or formatting, and make it sound like one coherent assistant response. "

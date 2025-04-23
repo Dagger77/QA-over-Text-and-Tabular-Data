@@ -4,6 +4,7 @@ import asyncio
 from datetime import datetime
 import time
 
+from rag_agent import initialize_rag
 from orchestration import multi_agent_graph
 from summary_agent import summary_agent
 
@@ -19,6 +20,9 @@ async def main():
 
     if "messages" not in st.session_state:
         st.session_state.messages = []
+
+    if "rag" not in st.session_state:
+        st.session_state.rag = await initialize_rag()
 
     if st.sidebar.button("Clear Chat"):
         st.session_state.messages = []
@@ -41,7 +45,7 @@ async def main():
             message_placeholder.markdown("Retrieving the answer...")
 
             start = time.time()
-            state = {"input": user_input}
+            state = {"input": user_input, "rag_instance": st.session_state.rag}
             final_state = await multi_agent_graph.ainvoke(state)
             end = time.time()
 
@@ -77,20 +81,25 @@ async def main():
                 with st.expander("🔍 Debug Info"):
                     st.markdown("**Intent:** " + final_state.get("intent", "unknown"))
                     st.markdown("**Response Time:** {:.2f} seconds".format(end - start))
-                    st.markdown("**RAG Output**")
-                    st.markdown(final_state.get("rag_output", "_None_"))
 
-                    st.markdown("**SQL Output**")
-                    st.markdown(final_state.get("sql_output", "_None_"))
+                    if final_state.get("rag_output"):
+                        st.markdown("**RAG Output**")
+                        st.markdown(final_state["rag_output"])
 
-                    if final_state.get("sql_output") and "**Query:**" in final_state["sql_output"]:
+                    if final_state.get("sql_output"):
+                        st.markdown("**SQL Output**")
+
                         lines = final_state["sql_output"].splitlines()
-                        query_line = next((line for line in lines if line.startswith("**Query:**")), "")
-                        explanation = final_state["sql_output"].split("**Answer:**")[0].replace(query_line, "")
-                        st.markdown("**SQL Query**")
-                        st.code(query_line.replace("**Query:** ", ""))
-                        st.markdown("**Explanation**")
-                        st.markdown(explanation.strip())
+                        query_line = next((line for line in lines if line.startswith("**Query:**")), None)
+                        if query_line:
+                            st.markdown("**SQL Query**")
+                            st.code(query_line.replace("**Query:** ", ""))
+
+                        answer_start = next((i for i, l in enumerate(lines) if "**Answer:**" in l), None)
+                        if answer_start is not None and answer_start + 1 < len(lines):
+                            st.markdown("**Result Rows**")
+                            for row_line in lines[answer_start + 1:]:
+                                st.markdown(row_line)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 from langgraph.graph import StateGraph, END
+from lightrag import LightRAG
 from typing import TypedDict
 from pydantic_ai import Agent
 
@@ -14,16 +15,28 @@ class AgentState(TypedDict):
     rag_output: str
     sql_output: str
     final_answer: str
+    rag_instance: LightRAG
 
 
 # LLM-based intent classifier
 intent_router = Agent(
     model="openai:gpt-4o-mini",
     system_prompt=(
-        "You are a classifier. Given a user's question, respond with one word:\n"
-        "- 'sql' if it requires querying structured data\n"
-        "- 'rag' if it asks for information from documents\n"
-        "- 'hybrid' if it needs both"
+        "You are an intent classifier for a multi-agent system.\n\n"
+        "Given a user's question, respond with just one word:\n"
+        "- `sql` → if the question asks for patterns, averages, trends, group comparisons, or any analysis of structured data in tables.\n"
+        "- `rag` → if the question asks for definitions, context, or information that can be found in documents.\n"
+        "- `hybrid` → if both documents and data are needed to answer the question.\n\n"
+        "Examples:\n"
+        "- \"What is the average reading score by lunch type?\" → sql\n"
+        "- \"How does lunch type affect performance?\" → sql\n"
+        "- \"What are the common parental education levels?\" → sql\n"
+        "- \"Why is parental education important?\" → rag\n"
+        "- \"Show me data and explanation about lunch impact\" → hybrid\n\n"
+        "Available tables and columns:\n"
+        "- student_info_basic(Gender, EthnicGroup, ParentEduc, LunchType, TestPrep, MathScore, ReadingScore, WritingScore)\n"
+        "- student_info_detailed(Gender, EthnicGroup, ParentEduc, LunchType, TestPrep, ParentMaritalStatus, PracticeSport, IsFirstChild, NrSiblings, TransportMeans, WklyStudyHours, MathScore, ReadingScore, WritingScore)\n\n"
+        "Consider this schema when deciding if a question involves structured data."
     )
 )
 
@@ -40,13 +53,22 @@ def decide_next_step(state: AgentState) -> str:
 
 # SQL agent node
 async def sql_node(state: AgentState) -> AgentState:
-    state["sql_output"] = await run_sql_agent(state["input"])
+    result = await run_sql_agent(state["input"])
+    if 'error' in result:
+        state["sql_output"] = f"Error: {result['error']}"
+    elif 'rows' in result:
+        state["sql_output"] = f"**Query:** `{result['sql_query']}`\n\n**Answer:**\n" + "\n".join(str(r) for r in result['rows'])
+    elif 'explanation' in result:
+        state["sql_output"] = result['explanation']
+    else:
+        state["sql_output"] = "No SQL result."
+
     return state
 
 
 # RAG agent node
 async def rag_node(state: AgentState) -> AgentState:
-    state["rag_output"] = await run_rag_agent(state["input"])
+    state["rag_output"] = await run_rag_agent(state["input"], lightrag=state["rag_instance"])
     return state
 
 
