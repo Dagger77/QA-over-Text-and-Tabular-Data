@@ -10,7 +10,7 @@ from pathlib import Path
 # Load environment variables from .env file
 dotenv.load_dotenv()
 
-documents_path = "./knowledgebase-docs"
+documents_path = "../data/knowledgebase-docs"
 
 
 def load_documents(doc_path: str):

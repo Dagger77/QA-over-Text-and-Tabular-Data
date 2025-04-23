@@ -4,15 +4,15 @@ import asyncio
 from datetime import datetime
 import time
 
-from rag_agent import initialize_rag
-from orchestration import multi_agent_graph
-from summary_agent import summary_agent
+from agents.rag_agent import initialize_rag
+from orchestration.orchestration import multi_agent_graph
+from agents.summary_agent import summary_agent
 
 load_dotenv()
 
 DEBUG_MODE = True
 LOG_TO_FILE = True
-LOG_FILE_PATH = "agent_logs.txt"
+LOG_FILE_PATH = "../agent_logs.txt"
 
 
 async def main():
@@ -97,7 +97,7 @@ async def main():
 
                         answer_start = next((i for i, l in enumerate(lines) if "**Answer:**" in l), None)
                         if answer_start is not None and answer_start + 1 < len(lines):
-                            st.markdown("**Result Rows**")
+                            st.markdown("**Answer**")
                             for row_line in lines[answer_start + 1:]:
                                 st.markdown(row_line)
 

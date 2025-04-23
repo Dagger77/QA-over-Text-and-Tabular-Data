@@ -144,7 +144,7 @@ async def validate_output(ctx: RunContext[SQLDeps], output: Response) -> Respons
     return output
 
 async def run_sql_agent(question: str) -> SQLAgentOutput:
-    conn = sqlite3.connect("student_data.db")
+    conn = sqlite3.connect("../student_data.db")
     deps = SQLDeps(conn)
 
     modified_question = question.strip() + (
@@ -153,6 +153,11 @@ async def run_sql_agent(question: str) -> SQLAgentOutput:
 
     result = await agent.run(modified_question, deps=deps)
     conn.close()
+
+    # attempt to handle data inconsistency across the tables
+    if "student_info_basic" in result.output.sql_query:
+        detailed_query = result.output.sql_query.replace("student_info_basic", "student_info_detailed")
+        result.output.sql_query += f";\n{detailed_query}"
 
     if hasattr(result.output, "rows") and result.output.rows:
         return {

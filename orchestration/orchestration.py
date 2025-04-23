@@ -3,9 +3,9 @@ from lightrag import LightRAG
 from typing import TypedDict
 from pydantic_ai import Agent
 
-from rag_agent import run_rag_agent
-from sql_agent import run_sql_agent
-from summary_agent import run_summary_agent
+from agents.rag_agent import run_rag_agent
+from agents.sql_agent import run_sql_agent
+from agents.summary_agent import run_summary_agent
 
 
 # Define shared state

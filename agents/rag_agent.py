@@ -18,7 +18,7 @@ from lightrag.llm.openai import gpt_4o_mini_complete, openai_embed
 # Load environment variables from .env file
 dotenv.load_dotenv()
 
-documents_path = "./knowledgebase-docs"
+documents_path = "../data/knowledgebase-docs"
 
 # Check for OpenAI API key
 if not os.getenv("OPENAI_API_KEY"):
