@@ -38,4 +38,11 @@ Chronological changelog of major features, improvements, and decisions.
 
 ---
 
+## v1.04
+
+- **Code refactored**
+- **SQL Agent system prompt updated** - injection with categorical distinct values
+
+---
+
 📘 See `README.md` for usage instructions and `tests/` for test coverage.
