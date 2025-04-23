@@ -94,10 +94,13 @@ streamlit run app/streamlit_app.py
 ---
 
 ## 💡 Example Questions
-- What is inclusive education?
-- How does lunch type affect math scores?
-- Average reading score of students who completed test prep
-- How many students are first children?
+- How does lunch quality influence exam scores?
+- How does age influence reading comprehension?
+- How many female students got math score over 90?
+- what is STEM?
+- Summarize the conclusion of the research made
+- What is math average score for students whose parents are divorced?
+- Who the sport activities affect the average score?
 
 ---
 
